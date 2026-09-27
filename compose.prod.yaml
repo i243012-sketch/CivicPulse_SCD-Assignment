@@ -55,8 +55,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     image: civicpulse-backend:${VERSION:-latest}
     container_name: civicpulse-backend-prod
     environment:

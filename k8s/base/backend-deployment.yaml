@@ -1,0 +1,233 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: civicpulse
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: civicpulse
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: run-migrations
+          image: civicpulse-backend:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              alembic upgrade head
+              echo "Migrations complete!"
+          env:
+            # Database configuration - individual components
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_PORT
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_NAME
+            - name: DATABASE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: DATABASE_PASSWORD
+            # Build DATABASE_URL from components
+            - name: DATABASE_URL
+              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)"
+            # Redis configuration
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: REDIS_PORT
+            # Build REDIS_URL from components
+            - name: REDIS_URL
+              value: "redis://$(REDIS_HOST):$(REDIS_PORT)/0"
+      containers:
+        - name: backend
+          image: civicpulse-backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            # Database configuration - individual components
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_PORT
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_NAME
+            - name: DATABASE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: DATABASE_PASSWORD
+            # Build DATABASE_URL from components using Kubernetes syntax
+            - name: DATABASE_URL
+              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)"
+            
+            # Redis configuration - individual components
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: REDIS_PORT
+            # Build REDIS_URL from components using Kubernetes syntax
+            - name: REDIS_URL
+              value: "redis://$(REDIS_HOST):$(REDIS_PORT)/0"
+            
+            # Groq API configuration
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: GROQ_API_KEY
+            - name: GROQ_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: GROQ_MODEL
+            - name: GROQ_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: GROQ_TIMEOUT
+            - name: GROQ_MAX_RETRIES
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: GROQ_MAX_RETRIES
+            
+            # Application configuration
+            - name: DEBUG
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: DEBUG
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: LOG_LEVEL
+            - name: TRIAGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: TRIAGE_PROVIDER
+            - name: RATE_LIMIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: RATE_LIMIT_ENABLED
+            - name: RATE_LIMIT_PER_MINUTE
+              valueFrom:
+                configMapKeyRef:
+                  name: civicpulse-config
+                  key: RATE_LIMIT_PER_MINUTE
+          
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          
+          # Startup probe: backend may take time to initialize
+          startupProbe:
+            httpGet:
+              path: /api/meta/health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 2
+          
+          # Liveness probe: check if app is alive (NOT dependent on database)
+          livenessProbe:
+            httpGet:
+              path: /api/meta/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          # Readiness probe: check if app is ready (MUST depend on database and cache)
+          readinessProbe:
+            httpGet:
+              path: /api/meta/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - sleep 15
