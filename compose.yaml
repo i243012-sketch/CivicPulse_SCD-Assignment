@@ -43,7 +43,7 @@ services:
       dockerfile: ./backend/Dockerfile
     container_name: civicpulse-backend-dev
     environment:
-      - DATABASE_URL=postgresql://civicpulse:${POSTGRES_PASSWORD:-dev_password_change_in_prod}@postgres:5432/civicpulse
+      - DATABASE_URL=postgresql+psycopg2://civicpulse:${POSTGRES_PASSWORD:-dev_password_change_in_prod}@postgres:5432/civicpulse
       - REDIS_URL=redis://redis:6379/0
       - TRIAGE_PROVIDER=${TRIAGE_PROVIDER}
       - GROQ_API_KEY=${GROQ_API_KEY:-}

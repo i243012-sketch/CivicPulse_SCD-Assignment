@@ -61,7 +61,7 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      DATABASE_URL: postgresql+psycopg2://test:test@localhost:5432/test
       REDIS_URL: redis://localhost:6379/0
       TRIAGE_PROVIDER: simulated
       GROQ_API_KEY: fake-key-for-testing
