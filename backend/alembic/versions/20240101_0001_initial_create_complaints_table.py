@@ -26,7 +26,7 @@ def upgrade() -> None:
         # Primary key
         sa.Column(
             "id",
-            postgresql.UUID(as_uuid=True),
+            sa.Uuid(),
             primary_key=True,
             nullable=False,
         ),
