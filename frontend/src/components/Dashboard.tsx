@@ -6,24 +6,50 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadStats = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.getStats();
-      setStats(data);
-    } catch (err) {
-      setError('Failed to load statistics');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const controller = new AbortController();
+
+    const loadStats = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await api.getStats(controller.signal);
+        setStats(data);
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        setError('Failed to load statistics');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadStats();
-    // Refresh stats every 30 seconds
-    const interval = setInterval(loadStats, 30000);
-    return () => clearInterval(interval);
+
+    let interval: ReturnType<typeof setInterval>;
+    
+    const startPolling = () => {
+      interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          loadStats();
+        }
+      }, 30000);
+    };
+
+    startPolling();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadStats();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   if (loading) {
