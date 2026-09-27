@@ -115,7 +115,7 @@ class RedisService:
 
         if count > limit:
             # Calculate retry after from TTL
-            retry_after = self.client.ttl(key)
+            retry_after = cast(int, self.client.ttl(key))
             return False, retry_after if retry_after > 0 else window
 
         return True, 0
