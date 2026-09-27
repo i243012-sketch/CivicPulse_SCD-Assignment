@@ -27,7 +27,7 @@ COPY nginx.conf /etc/nginx/conf.d/nginx.conf.template
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 # Copy built assets from builder stage
 COPY --from=builder /build/dist /usr/share/nginx/html
