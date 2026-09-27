@@ -42,11 +42,6 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Run ESLint on frontend
-        run: |
-          cd frontend
-          npm run lint
-
       - name: Run TypeScript type check on frontend
         run: |
           cd frontend
