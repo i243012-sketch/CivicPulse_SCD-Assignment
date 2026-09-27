@@ -94,12 +94,12 @@ async def request_id_middleware(request: Request, call_next: object) -> Response
     request.state.request_id = request_id
 
     # Process request
-    response = await call_next(request)  # type: ignore[misc]
+    response = await call_next(request)
 
     # Echo request ID in response
     response.headers["X-Request-ID"] = request_id
 
-    return response  # type: ignore[return-value]
+    return response
 
 
 @app.middleware("http")
@@ -114,7 +114,7 @@ async def metrics_middleware(request: Request, call_next: object) -> Response:
     start_time = time.time()
 
     # Process request
-    response = await call_next(request)  # type: ignore[misc]
+    response = await call_next(request)
 
     # Calculate latency
     latency = time.time() - start_time
@@ -122,7 +122,7 @@ async def metrics_middleware(request: Request, call_next: object) -> Response:
     # Extract endpoint (path template, not actual path with IDs)
     endpoint = request.url.path
     method = request.method
-    status_code = response.status_code  # type: ignore[attr-defined]
+    status_code = response.status_code
 
     # Record metrics
     request_count.labels(
@@ -136,7 +136,7 @@ async def metrics_middleware(request: Request, call_next: object) -> Response:
         endpoint=endpoint,
     ).observe(latency)
 
-    return response  # type: ignore[return-value]
+    return response
 
 
 @app.middleware("http")
@@ -153,7 +153,7 @@ async def shutdown_middleware(request: Request, call_next: object) -> Response:
             content={"detail": "Service is shutting down"},
         )
 
-    return await call_next(request)  # type: ignore[return-value,misc]
+    return await call_next(request)
 
 
 # Include routers

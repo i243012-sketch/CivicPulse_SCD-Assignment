@@ -41,4 +41,4 @@ class Settings(BaseSettings):
     METRICS_ENABLED: bool = True
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
