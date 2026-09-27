@@ -1,16 +1,17 @@
 """Complaint SQLAlchemy model."""
 import enum
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Enum, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
 
-class Category(str, enum.Enum):
+class Category(enum.StrEnum):
     """Complaint category enumeration."""
 
     WATER = "water"
@@ -21,7 +22,7 @@ class Category(str, enum.Enum):
     OTHER = "other"
 
 
-class Priority(str, enum.Enum):
+class Priority(enum.StrEnum):
     """Complaint priority enumeration."""
 
     HIGH = "high"
@@ -29,7 +30,7 @@ class Priority(str, enum.Enum):
     LOW = "low"
 
 
-class Status(str, enum.Enum):
+class Status(enum.StrEnum):
     """Complaint status enumeration."""
 
     OPEN = "open"
@@ -62,12 +63,12 @@ class Complaint(Base):
         primary_key=True,
         default=uuid4,
     )
-    
+
     # Core complaint data
     text: Mapped[str] = mapped_column(Text, nullable=False)
     location: Mapped[str] = mapped_column(String(200), nullable=False)
     reporter_contact: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    
+
     # Triage results
     category: Mapped[Category] = mapped_column(
         Enum(Category, name="category_enum", native_enum=False),
@@ -82,12 +83,12 @@ class Complaint(Base):
         nullable=False,
         default=Status.OPEN,
     )
-    
+
     # AI triage metadata
     ai_summary: Mapped[str | None] = mapped_column(String(140), nullable=True)
     triaged_by: Mapped[str] = mapped_column(String(50), nullable=False)
     triage_latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),

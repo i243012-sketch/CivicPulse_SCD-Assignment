@@ -81,11 +81,11 @@ class RuleBasedTriage:
     def triage(self, text: str, location: str) -> TriageResult:
         """
         Classify complaint using keyword matching.
-        
+
         Args:
             text: Complaint text
             location: Complaint location
-            
+
         Returns:
             TriageResult with deterministic classification
         """

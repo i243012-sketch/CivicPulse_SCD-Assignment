@@ -1,5 +1,4 @@
 """Factory for creating triage provider instances based on configuration."""
-from typing import Protocol
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -14,10 +13,10 @@ logger = get_logger(__name__)
 def get_triage_provider() -> TriageProvider:
     """
     Get the configured triage provider instance.
-    
+
     Returns:
         TriageProvider implementation based on TRIAGE_PROVIDER env var
-        
+
     Raises:
         ValueError: If provider name is not recognized
     """

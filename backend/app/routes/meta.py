@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/meta", tags=["meta"])
 def get_providers() -> ProvidersResponse:
     """
     Get active triage provider and recent outcomes.
-    
+
     Returns:
     - active_provider: Currently configured triage provider
     - recent_outcomes: Last 20 triage operations with latency and fallback info
@@ -31,7 +31,7 @@ def get_providers() -> ProvidersResponse:
 def health_check() -> HealthResponse:
     """
     Liveness check.
-    
+
     NEVER touches the database - a slow DB must not cause pod restarts.
     Always returns 200 if the service is running.
     """
@@ -52,21 +52,21 @@ def health_check() -> HealthResponse:
 def readiness_check(db: Session = Depends(get_db)) -> ReadyResponse:
     """
     Readiness check.
-    
+
     Checks that both PostgreSQL and Redis are reachable.
     Returns 200 only if both dependencies are healthy.
     Returns 503 with details if either dependency is unavailable.
     """
     postgres_status = "unhealthy"
     redis_status = "unhealthy"
-    
+
     # Check PostgreSQL
     try:
         db.execute(text("SELECT 1"))
         postgres_status = "healthy"
     except Exception:
         pass
-    
+
     # Check Redis
     try:
         redis_service = RedisService()
@@ -74,7 +74,7 @@ def readiness_check(db: Session = Depends(get_db)) -> ReadyResponse:
             redis_status = "healthy"
     except Exception:
         pass
-    
+
     # Return 503 if any dependency is unhealthy
     if postgres_status != "healthy" or redis_status != "healthy":
         raise HTTPException(
@@ -85,7 +85,7 @@ def readiness_check(db: Session = Depends(get_db)) -> ReadyResponse:
                 "redis": redis_status,
             },
         )
-    
+
     return ReadyResponse(
         status="ready",
         postgres=postgres_status,
