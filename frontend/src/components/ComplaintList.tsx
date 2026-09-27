@@ -11,28 +11,32 @@ export function ComplaintList() {
   const [priorityFilter, setPriorityFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const loadComplaints = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await api.listComplaints({
-        page,
-        page_size: 20,
-        category: categoryFilter || undefined,
-        priority: priorityFilter || undefined,
-        status: statusFilter || undefined,
-      });
-      setComplaints(response.items);
-      setTotal(response.total);
-    } catch (err) {
-      setError('Failed to load complaints');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const controller = new AbortController();
+
+    const loadComplaints = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await api.listComplaints({
+          page,
+          page_size: 20,
+          category: categoryFilter || undefined,
+          priority: priorityFilter || undefined,
+          status: statusFilter || undefined,
+        }, controller.signal);
+        setComplaints(response.items);
+        setTotal(response.total);
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        setError('Failed to load complaints');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadComplaints();
+    return () => controller.abort();
   }, [page, categoryFilter, priorityFilter, statusFilter]);
 
   const formatDate = (dateString: string) => {
@@ -56,8 +60,13 @@ export function ComplaintList() {
   }
 
   return (
-    <div className="complaint-list">
+    <div className="complaint-list" style={{ position: 'relative' }}>
       <h2>Complaints ({total})</h2>
+      {loading && complaints.length > 0 && (
+        <div style={{ position: 'absolute', top: 10, right: 10, padding: '4px 8px', background: '#eee', borderRadius: 4 }}>
+          Updating...
+        </div>
+      )}
 
       <div className="filters">
         <select
