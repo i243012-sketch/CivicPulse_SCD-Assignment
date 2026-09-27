@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: civicpulse
+spec:
+  template:
+    spec:
+      containers:
+        - name: frontend
+          env:
+            - name: BACKEND_HOST
+              value: prod-backend

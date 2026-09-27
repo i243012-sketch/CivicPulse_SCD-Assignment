@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: civicpulse-dev
+
+namePrefix: dev-
+
+labels:
+  - pairs:
+      environment: dev
+
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: civicpulse-config
+    behavior: merge
+    literals:
+      - DATABASE_HOST=dev-postgres
+      - REDIS_HOST=dev-redis
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - TRIAGE_PROVIDER=simulated
+
+patches:
+  - path: backend-dev-patch.yaml
+  - path: frontend-dev-patch.yaml
+  - path: ingress-dev-patch.yaml
+
+images:
+  - name: civicpulse-backend
+    newTag: dev-latest
+  - name: civicpulse-frontend
+    newTag: dev-latest
