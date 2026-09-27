@@ -39,8 +39,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: civicpulse-backend-dev
     environment:
       - DATABASE_URL=postgresql://civicpulse:${POSTGRES_PASSWORD:-dev_password_change_in_prod}@postgres:5432/civicpulse
@@ -66,6 +66,7 @@ services:
     command: >
       sh -c "
         alembic upgrade head &&
+        python /app/scripts/seed.py &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
     volumes:

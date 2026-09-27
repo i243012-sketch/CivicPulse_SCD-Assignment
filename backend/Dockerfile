@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
-COPY pyproject.toml ./
+COPY backend/pyproject.toml ./
 
 # Install dependencies to a local directory
 RUN pip install --no-cache-dir --user \
@@ -45,9 +45,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY --chown=appuser:appuser app/ ./app/
-COPY --chown=appuser:appuser alembic/ ./alembic/
-COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser backend/app/ ./app/
+COPY --chown=appuser:appuser backend/alembic/ ./alembic/
+COPY --chown=appuser:appuser backend/alembic.ini ./
+COPY --chown=appuser:appuser scripts/ ./scripts/
 
 # Ensure the non-root user can access the PATH
 ENV PATH=/home/appuser/.local/bin:$PATH
