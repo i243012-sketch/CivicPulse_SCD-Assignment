@@ -58,7 +58,7 @@ class Complaint(Base):
     __tablename__ = "complaints"
 
     id: Mapped[UUID] = mapped_column(
-        Uuid(binary=False),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
