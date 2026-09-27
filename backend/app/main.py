@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import RequestResponseEndpoint
 
 from app.core.config import settings
 from app.core.database import close_db_connections
@@ -80,7 +81,10 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next: object) -> Response:
+async def request_id_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to add request ID to all requests.
 
@@ -103,7 +107,10 @@ async def request_id_middleware(request: Request, call_next: object) -> Response
 
 
 @app.middleware("http")
-async def metrics_middleware(request: Request, call_next: object) -> Response:
+async def metrics_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to record request metrics.
 
@@ -140,7 +147,10 @@ async def metrics_middleware(request: Request, call_next: object) -> Response:
 
 
 @app.middleware("http")
-async def shutdown_middleware(request: Request, call_next: object) -> Response:
+async def shutdown_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to reject new requests during graceful shutdown.
 

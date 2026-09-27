@@ -1,5 +1,6 @@
 """Redis service for caching and rate limiting."""
 import hashlib
+from typing import cast
 
 import redis
 
@@ -14,7 +15,10 @@ class RedisService:
 
     def __init__(self) -> None:
         """Initialize Redis connection."""
-        self.client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        self.client: redis.Redis = redis.from_url(  # type: ignore[no-untyped-call]
+            settings.REDIS_URL,
+            decode_responses=True,
+        )
 
     def get(self, key: str) -> str | None:
         """
@@ -27,7 +31,8 @@ class RedisService:
             Value if exists, None otherwise
         """
         try:
-            return self.client.get(key)
+            value = self.client.get(key)
+            return cast(str | None, value)
         except redis.RedisError as e:
             logger.error(f"Redis GET error: {e}")
             return None
@@ -80,7 +85,7 @@ class RedisService:
             New counter value, or None on error
         """
         try:
-            value = self.client.incr(key)
+            value = cast(int, self.client.incr(key))
             if ttl and value == 1:  # First increment, set TTL
                 self.client.expire(key, ttl)
             return value
@@ -123,7 +128,7 @@ class RedisService:
             True if Redis responds to PING, False otherwise
         """
         try:
-            return self.client.ping()
+            return bool(self.client.ping())
         except redis.RedisError:
             return False
 

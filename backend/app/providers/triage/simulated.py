@@ -29,12 +29,12 @@ class SimulatedTriage:
         hash_value = int(hashlib.sha256(combined.encode()).hexdigest(), 16)
 
         # Deterministically select category
-        categories = list(Category)
-        category = categories[hash_value % len(categories)]
+        categories: list[Category] = list(Category)
+        category: Category = categories[hash_value % len(categories)]
 
         # Deterministically select priority
-        priorities = list(Priority)
-        priority = priorities[(hash_value // len(categories)) % len(priorities)]
+        priorities: list[Priority] = list(Priority)
+        priority: Priority = priorities[(hash_value // len(categories)) % len(priorities)]
 
         # Generate deterministic summary
         summary = self._generate_summary(text, hash_value)
