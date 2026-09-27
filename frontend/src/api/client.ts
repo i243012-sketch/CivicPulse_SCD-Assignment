@@ -80,7 +80,7 @@ export const api = {
     status?: string;
     page?: number;
     page_size?: number;
-  } = {}): Promise<ComplaintListResponse> {
+  } = {}, signal?: AbortSignal): Promise<ComplaintListResponse> {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -88,7 +88,8 @@ export const api = {
       }
     });
     const response = await fetch(
-      `${API_BASE_URL}/complaints?${searchParams}`
+      `${API_BASE_URL}/complaints?${searchParams}`,
+      { signal }
     );
     return handleResponse<ComplaintListResponse>(response);
   },
@@ -105,9 +106,18 @@ export const api = {
     return handleResponse<Complaint>(response);
   },
 
-  async getStats(): Promise<Stats> {
-    const response = await fetch(`${API_BASE_URL}/stats`);
+  async getStats(signal?: AbortSignal): Promise<Stats> {
+    const response = await fetch(`${API_BASE_URL}/stats`, { signal });
     return handleResponse<Stats>(response);
+  },
+
+  async checkHealth(signal?: AbortSignal): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/meta/health`, { signal });
+      return response.ok;
+    } catch {
+      return false;
+    }
   },
 };
 
