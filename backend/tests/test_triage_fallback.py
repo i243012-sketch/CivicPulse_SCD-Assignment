@@ -7,17 +7,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base, get_db
 from app.main import app
-from app.providers.triage.base import TriageProvider
+from app.providers.triage.base import TriageProvider, TriageTimeoutError
 from app.routes.complaints import get_complaint_service
 from app.schemas.triage import TriageResult
 from app.services.complaint_service import ComplaintService
 from app.services.redis_service import RedisService
-
-
-class TriageTimeoutError(Exception):
-    """Custom exception for triage timeout."""
-
-    pass
 
 
 class AlwaysFailingProvider:

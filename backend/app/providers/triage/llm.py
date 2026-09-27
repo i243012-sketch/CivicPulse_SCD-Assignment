@@ -1,4 +1,4 @@
-"""LLM-based triage provider using Groq API with retry, timeout, and fallback."""
+"""LLM-based triage provider using Groq API with retry and timeout."""
 import asyncio
 import json
 import random
@@ -10,6 +10,11 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.complaint import Category, Priority
+from app.providers.triage.base import (
+    TriageRateLimitError,
+    TriageTimeoutError,
+    TriageValidationError,
+)
 from app.schemas.triage import TriageResult
 
 logger = get_logger(__name__)
@@ -29,22 +34,26 @@ class LLMTriage:
 
     def triage(self, text: str, location: str) -> TriageResult:
         """
-        Triage using Groq LLM with timeout, retry, and fallback logic.
+        Triage using Groq LLM with timeout and retry logic.
         
         Orchestration rules:
         1. Request JSON output, validate against TriageResult
         2. Hard 10-second timeout
         3. On timeout/429/5xx: retry once with jitter
         4. Never retry 400 (malformed request)
-        5. On failure: fallback to RuleBasedTriage
-        6. Always return 201, never 500
+        5. On failure: raise appropriate exception (NO internal fallback)
         
         Args:
             text: Complaint text (untrusted)
             location: Complaint location (untrusted)
             
         Returns:
-            TriageResult from LLM or fallback rules engine
+            TriageResult from LLM
+            
+        Raises:
+            TriageTimeoutError: On timeout
+            TriageRateLimitError: On rate limit (429)
+            TriageValidationError: On invalid/malformed response
         """
         # Use asyncio.run to call async implementation
         return asyncio.run(self._triage_async(text, location))
@@ -65,11 +74,30 @@ class LLMTriage:
                         "Groq API returned 400, not retrying",
                         extra={"extra_fields": {"status_code": 400, "attempt": attempt}},
                     )
-                    last_error = e
-                    break
+                    raise TriageValidationError(f"Groq API returned 400: {e}") from e
 
-                # Retry on 429 (rate limit) or 5xx (server errors)
-                if e.response.status_code == 429 or e.response.status_code >= 500:
+                # 429 rate limit - retry with backoff
+                if e.response.status_code == 429:
+                    if attempt < self.max_retries:
+                        jitter = random.uniform(0.1, 0.5)
+                        logger.info(
+                            f"Retrying Groq API after {jitter:.2f}s",
+                            extra={
+                                "extra_fields": {
+                                    "status_code": 429,
+                                    "attempt": attempt,
+                                    "jitter": jitter,
+                                }
+                            },
+                        )
+                        await asyncio.sleep(jitter)
+                        attempt += 1
+                        continue
+                    # Max retries exhausted on rate limit
+                    raise TriageRateLimitError(f"Groq API rate limit: {e}") from e
+
+                # 5xx server errors - retry with backoff
+                if e.response.status_code >= 500:
                     if attempt < self.max_retries:
                         jitter = random.uniform(0.1, 0.5)
                         logger.info(
@@ -85,10 +113,33 @@ class LLMTriage:
                         await asyncio.sleep(jitter)
                         attempt += 1
                         continue
+                    # Max retries exhausted on server error
+                    raise TriageValidationError(f"Groq API server error: {e}") from e
+
+                # Other HTTP errors
                 last_error = e
                 break
-            except (httpx.TimeoutException, httpx.RequestError, ValidationError) as e:
-                # Retry on timeout or network errors
+            except httpx.TimeoutException as e:
+                # Retry on timeout
+                if attempt < self.max_retries:
+                    jitter = random.uniform(0.1, 0.5)
+                    logger.info(
+                        f"Retrying Groq API after {jitter:.2f}s",
+                        extra={
+                            "extra_fields": {
+                                "error_type": "TimeoutException",
+                                "attempt": attempt,
+                                "jitter": jitter,
+                            }
+                        },
+                    )
+                    await asyncio.sleep(jitter)
+                    attempt += 1
+                    continue
+                # Max retries exhausted on timeout
+                raise TriageTimeoutError(f"Groq API timeout: {e}") from e
+            except (httpx.RequestError, ValidationError, json.JSONDecodeError) as e:
+                # Network errors, validation errors, or malformed JSON
                 if attempt < self.max_retries:
                     jitter = random.uniform(0.1, 0.5)
                     logger.info(
@@ -104,25 +155,11 @@ class LLMTriage:
                     await asyncio.sleep(jitter)
                     attempt += 1
                     continue
-                last_error = e
-                break
+                # Max retries exhausted - raise validation error
+                raise TriageValidationError(f"Groq API error: {e}") from e
 
-        # All retries exhausted or non-retryable error - fallback to rules
-        logger.warning(
-            "LLM triage failed, falling back to rules engine",
-            extra={
-                "extra_fields": {
-                    "error_type": type(last_error).__name__ if last_error else "unknown",
-                    "error_message": str(last_error) if last_error else "unknown",
-                }
-            },
-        )
-
-        # Import here to avoid circular dependency
-        from app.providers.triage.rules import RuleBasedTriage
-
-        fallback = RuleBasedTriage()
-        return fallback.triage(text, location)
+        # All retries exhausted with non-specific error
+        raise TriageValidationError(f"Groq API failed: {last_error}") from last_error
 
     async def _call_groq(self, text: str, location: str) -> TriageResult:
         """
@@ -139,6 +176,7 @@ class LLMTriage:
             httpx.HTTPStatusError: On HTTP error responses
             httpx.TimeoutException: On timeout
             ValidationError: On invalid response schema
+            json.JSONDecodeError: On malformed JSON
         """
         # Construct prompt with clear delimitation of untrusted data
         prompt = self._build_prompt(text, location)
@@ -172,13 +210,8 @@ class LLMTriage:
         data = response.json()
         content = data["choices"][0]["message"]["content"]
 
-        # Parse JSON from response
-        try:
-            result_data = json.loads(content)
-        except json.JSONDecodeError as e:
-            raise ValidationError(f"Invalid JSON from Groq: {e}") from e
-
-        # Validate against TriageResult schema
+        # Parse JSON from response and validate against TriageResult schema
+        result_data = json.loads(content)
         return TriageResult(**result_data)
 
     def _build_prompt(self, text: str, location: str) -> str:
