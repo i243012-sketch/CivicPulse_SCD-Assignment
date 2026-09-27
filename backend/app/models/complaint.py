@@ -3,9 +3,8 @@ import enum
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Enum, Integer, String, Text, func
+from sqlalchemy import Enum, Integer, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -59,7 +58,7 @@ class Complaint(Base):
     __tablename__ = "complaints"
 
     id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+        Uuid(binary=False),
         primary_key=True,
         default=uuid4,
     )

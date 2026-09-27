@@ -24,18 +24,18 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install --upgrade pip
-          pip install ruff mypy
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
       - name: Run ruff on backend
         run: |
           cd backend
-          ruff check app/
+          python -m ruff check app/
 
       - name: Run mypy on backend
         run: |
           cd backend
-          mypy app/
+          python -m mypy app/
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
