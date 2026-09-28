@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image with semver tags
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image with semver tags
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM for backend
+        run: |
+          syft ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ steps.version.outputs.version }} -o spdx-json > backend-sbom-${{ steps.version.outputs.version }}.json
+          echo "Backend SBOM generated"
+
+      - name: Generate SBOM for frontend
+        run: |
+          syft ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ steps.version.outputs.version }} -o spdx-json > frontend-sbom-${{ steps.version.outputs.version }}.json
+          echo "Frontend SBOM generated"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## CivicPulse Release ${{ steps.version.outputs.version }}
+
+          ### Docker Images
+
+          Backend:
+          ```
+          ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ steps.version.outputs.version }}
+          ```
+
+          Frontend:
+          ```
+          ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ steps.version.outputs.version }}
+          ```
+
+          ### Deployment
+
+          To deploy this release to Kubernetes:
+          ```bash
+          cd k8s/overlays/prod
+          kustomize edit set image civicpulse-backend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ steps.version.outputs.version }}
+          kustomize edit set image civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ steps.version.outputs.version }}
+          kubectl apply -k .
+          ```
+
+          ### SBOM
+
+          Software Bill of Materials (SBOM) files are attached to this release.
+
+          ### Changelog
+
+          See commit history for detailed changes.
+          EOF
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: |
+            backend-sbom-${{ steps.version.outputs.version }}.json
+            frontend-sbom-${{ steps.version.outputs.version }}.json
+          generate_release_notes: true
+          draft: false
+          prerelease: false
