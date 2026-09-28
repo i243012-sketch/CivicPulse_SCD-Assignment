@@ -9,7 +9,7 @@ router = APIRouter(tags=["metrics"])
 def metrics() -> Response:
     """
     Prometheus metrics endpoint.
-    
+
     Returns metrics in Prometheus text format:
     - http_requests_total: Request count by method/endpoint/status
     - http_request_duration_seconds: Request latency histogram

@@ -2,7 +2,6 @@
 import asyncio
 import json
 import random
-from typing import Any
 
 import httpx
 from pydantic import ValidationError
@@ -35,21 +34,21 @@ class LLMTriage:
     def triage(self, text: str, location: str) -> TriageResult:
         """
         Triage using Groq LLM with timeout and retry logic.
-        
+
         Orchestration rules:
         1. Request JSON output, validate against TriageResult
         2. Hard 10-second timeout
         3. On timeout/429/5xx: retry once with jitter
         4. Never retry 400 (malformed request)
         5. On failure: raise appropriate exception (NO internal fallback)
-        
+
         Args:
             text: Complaint text (untrusted)
             location: Complaint location (untrusted)
-            
+
         Returns:
             TriageResult from LLM
-            
+
         Raises:
             TriageTimeoutError: On timeout
             TriageRateLimitError: On rate limit (429)
@@ -164,14 +163,14 @@ class LLMTriage:
     async def _call_groq(self, text: str, location: str) -> TriageResult:
         """
         Make a single call to Groq API.
-        
+
         Args:
             text: Complaint text (delimited as untrusted)
             location: Complaint location
-            
+
         Returns:
             Validated TriageResult
-            
+
         Raises:
             httpx.HTTPStatusError: On HTTP error responses
             httpx.TimeoutException: On timeout

@@ -25,17 +25,17 @@ def get_stats(
 ) -> StatsResponse:
     """
     Get aggregated complaint statistics.
-    
+
     Returns counts grouped by category and priority.
-    
+
     Response is cached in Redis for 30 seconds.
     Cache is invalidated immediately on any complaint write operation.
-    
+
     Response header X-Cache indicates HIT or MISS.
     """
     stats, cache_hit = service.get_stats()
-    
+
     # Set cache header
     response.headers["X-Cache"] = "HIT" if cache_hit else "MISS"
-    
+
     return stats

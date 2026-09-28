@@ -9,7 +9,7 @@ spec:
     app: frontend
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080
       name: http
 ---
 apiVersion: apps/v1
@@ -36,7 +36,7 @@ spec:
         - name: frontend
           image: civicpulse-frontend:latest
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
           env:
             - name: BACKEND_HOST
@@ -52,15 +52,15 @@ spec:
               memory: 256Mi
           livenessProbe:
             httpGet:
-              path: /
-              port: 80
+              path: /nginx-health
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /
-              port: 80
+              path: /nginx-health
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3

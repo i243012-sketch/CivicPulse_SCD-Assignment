@@ -1,14 +1,14 @@
 """FastAPI application entry point."""
 import signal
-import sys
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import RequestResponseEndpoint
 
 from app.core.config import settings
 from app.core.database import close_db_connections
@@ -39,7 +39,7 @@ signal.signal(signal.SIGTERM, handle_sigterm)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Application lifespan manager.
-    
+
     Handles startup and shutdown events.
     """
     # Startup
@@ -52,9 +52,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             }
         },
     )
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down CivicPulse backend")
     close_db_connections()
@@ -81,70 +81,79 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next: object) -> Response:
+async def request_id_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to add request ID to all requests.
-    
+
     Takes X-Request-ID from header if present, otherwise generates one.
     Echoes the request ID back in the response headers.
     Attaches request_id to logs for tracing.
     """
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    
+
     # Store in request state for access in route handlers
     request.state.request_id = request_id
-    
+
     # Process request
-    response = await call_next(request)  # type: ignore[misc]
-    
+    response = await call_next(request)
+
     # Echo request ID in response
     response.headers["X-Request-ID"] = request_id
-    
-    return response  # type: ignore[return-value]
+
+    return response
 
 
 @app.middleware("http")
-async def metrics_middleware(request: Request, call_next: object) -> Response:
+async def metrics_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to record request metrics.
-    
+
     Records:
     - Request count by method/endpoint/status
     - Request latency by method/endpoint
     """
     start_time = time.time()
-    
+
     # Process request
-    response = await call_next(request)  # type: ignore[misc]
-    
+    response = await call_next(request)
+
     # Calculate latency
     latency = time.time() - start_time
-    
+
     # Extract endpoint (path template, not actual path with IDs)
     endpoint = request.url.path
     method = request.method
-    status_code = response.status_code  # type: ignore[attr-defined]
-    
+    status_code = response.status_code
+
     # Record metrics
     request_count.labels(
         method=method,
         endpoint=endpoint,
         status_code=status_code,
     ).inc()
-    
+
     request_latency.labels(
         method=method,
         endpoint=endpoint,
     ).observe(latency)
-    
-    return response  # type: ignore[return-value]
+
+    return response
 
 
 @app.middleware("http")
-async def shutdown_middleware(request: Request, call_next: object) -> Response:
+async def shutdown_middleware(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     """
     Middleware to reject new requests during graceful shutdown.
-    
+
     When shutdown_event is set, return 503 for new requests
     but allow in-flight requests to complete.
     """
@@ -153,8 +162,8 @@ async def shutdown_middleware(request: Request, call_next: object) -> Response:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"detail": "Service is shutting down"},
         )
-    
-    return await call_next(request)  # type: ignore[return-value,misc]
+
+    return await call_next(request)
 
 
 # Include routers

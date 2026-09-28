@@ -1,5 +1,4 @@
 """Factory for creating triage provider instances based on configuration."""
-from typing import Protocol
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -14,10 +13,10 @@ logger = get_logger(__name__)
 def get_triage_provider() -> TriageProvider:
     """
     Get the configured triage provider instance.
-    
+
     Returns:
         TriageProvider implementation based on TRIAGE_PROVIDER env var
-        
+
     Raises:
         ValueError: If provider name is not recognized
     """
@@ -25,13 +24,13 @@ def get_triage_provider() -> TriageProvider:
 
     if provider_name == "llm":
         logger.info("Initializing LLM triage provider (Groq)")
-        return LLMTriage()  # type: ignore[return-value]
+        return LLMTriage()
     elif provider_name == "rules":
         logger.info("Initializing rule-based triage provider")
-        return RuleBasedTriage()  # type: ignore[return-value]
+        return RuleBasedTriage()
     elif provider_name == "simulated":
         logger.info("Initializing simulated triage provider")
-        return SimulatedTriage()  # type: ignore[return-value]
+        return SimulatedTriage()
     else:
         raise ValueError(
             f"Unknown triage provider: {provider_name}. "
