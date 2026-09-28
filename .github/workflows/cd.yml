@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/cd-release-workflows  # TEMPORARY - remove before merging
 
 permissions:
   contents: read
