@@ -335,7 +335,7 @@ jobs:
       - name: Override TRIAGE_PROVIDER to simulated
         run: |
           cd k8s/overlays/prod
-          kustomize edit add configmap civicpulse-config --behavior=merge --literal=TRIAGE_PROVIDER=simulated
+          kustomize edit add configmap civicpulse-config --behavior=merge --from-literal=TRIAGE_PROVIDER=simulated
 
       - name: Deploy with kustomize
         run: |
