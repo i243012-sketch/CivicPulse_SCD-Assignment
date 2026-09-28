@@ -192,37 +192,9 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Update prod overlay to use SHA-tagged GHCR images
-        run: |
-          cd k8s/overlays/prod
-          kustomize edit set image civicpulse-backend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }}
-          kustomize edit set image civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
-
-      - name: Verify no :latest tags in rendered manifests
-        run: |
-          cd k8s/overlays/prod
-          kustomize build . > /tmp/rendered.yaml
-          echo "=== All image: lines in rendered manifests ==="
-          grep "image:" /tmp/rendered.yaml
-          echo ""
-          if grep -q "image:.*:latest" /tmp/rendered.yaml; then
-            echo "❌ ERROR: Found :latest tag in rendered manifests"
-            exit 1
-          fi
-          echo "✅ No :latest tags found"
-          echo ""
-          echo "=== Backend images (initContainer and main) ==="
-          grep "image: ghcr.io.*backend" /tmp/rendered.yaml
-          backend_count=$(grep -c "image: ghcr.io.*backend:${{ github.sha }}" /tmp/rendered.yaml)
-          if [ "$backend_count" -ne 2 ]; then
-            echo "❌ ERROR: Expected 2 backend images with SHA tag, found $backend_count"
-            exit 1
-          fi
-          echo "✅ Both backend containers use SHA-tagged GHCR image"
-
       - name: Create namespace
         run: |
-          kubectl create namespace civicpulse-prod || true
+          kubectl create namespace civicpulse-prod
 
       - name: Create imagePullSecret for GHCR
         run: |
@@ -230,39 +202,35 @@ jobs:
             --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
-            -n civicpulse-prod \
-            --dry-run=client -o yaml | kubectl apply -f -
+            -n civicpulse-prod
 
-      - name: Patch deployments to use imagePullSecret
+      - name: Create secret with CI values
+        run: |
+          kubectl create secret generic prod-civicpulse-secrets \
+            --from-literal=DATABASE_PASSWORD=ci-test-password \
+            --from-literal=GROQ_API_KEY=dummy-key-not-used \
+            -n civicpulse-prod
+
+      - name: Prepare CI-specific kustomization overlay
         run: |
           cd k8s/overlays/prod
-          cat > imagepull-patch.yaml << 'EOF'
-          apiVersion: apps/v1
-          kind: Deployment
+          
+          # Update images to use SHA tags
+          kustomize edit set image \
+            civicpulse-backend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }} \
+            civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
+          
+          # Create single comprehensive patch file for CI
+          cat > ci-override-patch.yaml << 'EOF'
+          # Override TRIAGE_PROVIDER to simulated
+          apiVersion: v1
+          kind: ConfigMap
           metadata:
-            name: backend
-          spec:
-            template:
-              spec:
-                imagePullSecrets:
-                - name: ghcr-pull-secret
+            name: civicpulse-config
+          data:
+            TRIAGE_PROVIDER: simulated
           ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: frontend
-          spec:
-            template:
-              spec:
-                imagePullSecrets:
-                - name: ghcr-pull-secret
-          EOF
-          kustomize edit add patch --path imagepull-patch.yaml
-
-      - name: Patch replicas and resources for CI runner constraints
-        run: |
-          cd k8s/overlays/prod
-          cat > ci-resources-patch.yaml << 'EOF'
+          # Add imagePullSecret and reduce resources for backend
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -271,6 +239,8 @@ jobs:
             replicas: 1
             template:
               spec:
+                imagePullSecrets:
+                - name: ghcr-pull-secret
                 initContainers:
                 - name: run-migrations
                   resources:
@@ -290,13 +260,19 @@ jobs:
                       cpu: 1000m
                       memory: 1Gi
           ---
+          # Add imagePullSecret to frontend and reduce replicas
           apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: frontend
           spec:
             replicas: 1
+            template:
+              spec:
+                imagePullSecrets:
+                - name: ghcr-pull-secret
           ---
+          # Reduce redis replicas
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -304,6 +280,7 @@ jobs:
           spec:
             replicas: 1
           ---
+          # Reduce postgres resources
           apiVersion: apps/v1
           kind: StatefulSet
           metadata:
@@ -322,28 +299,44 @@ jobs:
                       cpu: 1000m
                       memory: 1Gi
           EOF
-          kustomize edit add patch --path ci-resources-patch.yaml
+          
+          # Add the patch to kustomization
+          kustomize edit add patch --path ci-override-patch.yaml
 
-      - name: Create secret with CI values
-        run: |
-          kubectl create secret generic prod-civicpulse-secrets \
-            --from-literal=DATABASE_PASSWORD=ci-test-password \
-            --from-literal=GROQ_API_KEY=dummy-key-not-used \
-            -n civicpulse-prod \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Override TRIAGE_PROVIDER to simulated
+      - name: Verify rendered manifests
         run: |
           cd k8s/overlays/prod
-          cat > triage-override-patch.yaml << 'EOF'
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: civicpulse-config
-          data:
-            TRIAGE_PROVIDER: simulated
-          EOF
-          kustomize edit add patch --path triage-override-patch.yaml --kind ConfigMap
+          echo "=== Rendering final manifests ==="
+          kustomize build . > /tmp/rendered.yaml
+          
+          echo "=== All image: lines ==="
+          grep "image:" /tmp/rendered.yaml
+          echo ""
+          
+          # Verify no :latest tags
+          if grep -q "image:.*:latest" /tmp/rendered.yaml; then
+            echo "❌ ERROR: Found :latest tag in rendered manifests"
+            exit 1
+          fi
+          echo "✅ No :latest tags found"
+          
+          # Verify backend images
+          echo "=== Backend images ==="
+          grep "image: ghcr.io.*backend" /tmp/rendered.yaml
+          backend_count=$(grep -c "image: ghcr.io.*backend:${{ github.sha }}" /tmp/rendered.yaml)
+          if [ "$backend_count" -ne 2 ]; then
+            echo "❌ ERROR: Expected 2 backend images with SHA tag, found $backend_count"
+            exit 1
+          fi
+          echo "✅ Both backend containers use SHA-tagged GHCR image"
+          
+          # Verify TRIAGE_PROVIDER override
+          echo "=== TRIAGE_PROVIDER setting ==="
+          if ! grep -q "TRIAGE_PROVIDER: simulated" /tmp/rendered.yaml; then
+            echo "❌ ERROR: TRIAGE_PROVIDER not set to simulated"
+            exit 1
+          fi
+          echo "✅ TRIAGE_PROVIDER: simulated"
 
       - name: Deploy with kustomize
         run: |
@@ -370,7 +363,7 @@ jobs:
           # Port-forward backend service
           kubectl port-forward svc/prod-backend 8000:8000 -n civicpulse-prod &
           PF_PID=$!
-          sleep 5
+          sleep 10
 
           # Test health endpoint
           echo "Testing /api/meta/health..."
@@ -426,6 +419,8 @@ jobs:
           kubectl logs -n civicpulse-prod -l app=backend --tail=100 || true
           echo "=== Frontend logs ==="
           kubectl logs -n civicpulse-prod -l app=frontend --tail=100 || true
+          echo "=== Postgres logs ==="
+          kubectl logs -n civicpulse-prod -l app=postgres --tail=100 || true
           echo "=== Events ==="
           kubectl get events -n civicpulse-prod --sort-by='.lastTimestamp'
 
