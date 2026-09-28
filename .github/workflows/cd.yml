@@ -1,0 +1,427 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+      - feat/cd-release-workflows  # TEMPORARY - remove before merging
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Merged Code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: postgresql+psycopg2://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379/0
+      TRIAGE_PROVIDER: simulated
+      GROQ_API_KEY: fake-key-for-testing
+      RATE_LIMIT_ENABLED: false
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run backend migrations
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          PYTHONPATH=. pytest -v --cov=app --cov-report=term-missing
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm run test
+
+  build-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend_digest: ${{ steps.build-backend.outputs.digest }}
+      frontend_digest: ${{ steps.build-frontend.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        id: build-backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        id: build-frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM for backend
+        run: |
+          syft ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }} -o spdx-json > backend-sbom.json
+          echo "Backend SBOM generated"
+
+      - name: Generate SBOM for frontend
+        run: |
+          syft ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }} -o spdx-json > frontend-sbom.json
+          echo "Frontend SBOM generated"
+
+      - name: Upload SBOMs as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            backend-sbom.json
+            frontend-sbom.json
+
+  deploy-k8s:
+    name: Deploy to K8s Test Cluster
+    runs-on: ubuntu-latest
+    needs: build-push
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create kind cluster
+        run: |
+          kind create cluster --name civicpulse-test --wait 5m
+
+      - name: Verify cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Update prod overlay to use SHA-tagged GHCR images
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image civicpulse-backend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }}
+          kustomize edit set image civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
+
+      - name: Verify no :latest tags in rendered manifests
+        run: |
+          cd k8s/overlays/prod
+          kustomize build . > /tmp/rendered.yaml
+          echo "=== All image: lines in rendered manifests ==="
+          grep "image:" /tmp/rendered.yaml
+          echo ""
+          if grep -q "image:.*:latest" /tmp/rendered.yaml; then
+            echo "❌ ERROR: Found :latest tag in rendered manifests"
+            exit 1
+          fi
+          echo "✅ No :latest tags found"
+          echo ""
+          echo "=== Backend images (initContainer and main) ==="
+          grep "image: ghcr.io.*backend" /tmp/rendered.yaml
+          backend_count=$(grep -c "image: ghcr.io.*backend:${{ github.sha }}" /tmp/rendered.yaml)
+          if [ "$backend_count" -ne 2 ]; then
+            echo "❌ ERROR: Expected 2 backend images with SHA tag, found $backend_count"
+            exit 1
+          fi
+          echo "✅ Both backend containers use SHA-tagged GHCR image"
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace civicpulse-prod || true
+
+      - name: Create imagePullSecret for GHCR
+        run: |
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            -n civicpulse-prod \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Patch deployments to use imagePullSecret
+        run: |
+          cd k8s/overlays/prod
+          cat > imagepull-patch.yaml << 'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend
+          spec:
+            template:
+              spec:
+                imagePullSecrets:
+                - name: ghcr-pull-secret
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+          spec:
+            template:
+              spec:
+                imagePullSecrets:
+                - name: ghcr-pull-secret
+          EOF
+          kustomize edit add patch --path imagepull-patch.yaml
+
+      - name: Patch replicas and resources for CI runner constraints
+        run: |
+          cd k8s/overlays/prod
+          cat > ci-resources-patch.yaml << 'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend
+          spec:
+            replicas: 1
+            template:
+              spec:
+                initContainers:
+                - name: run-migrations
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+                containers:
+                - name: backend
+                  resources:
+                    requests:
+                      cpu: 200m
+                      memory: 512Mi
+                    limits:
+                      cpu: 1000m
+                      memory: 1Gi
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+          spec:
+            replicas: 1
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: redis
+          spec:
+            replicas: 1
+          ---
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: postgres
+          spec:
+            replicas: 1
+            template:
+              spec:
+                containers:
+                - name: postgres
+                  resources:
+                    requests:
+                      cpu: 200m
+                      memory: 512Mi
+                    limits:
+                      cpu: 1000m
+                      memory: 1Gi
+          EOF
+          kustomize edit add patch --path ci-resources-patch.yaml
+
+      - name: Create secret with CI values
+        run: |
+          kubectl create secret generic prod-civicpulse-secrets \
+            --from-literal=DATABASE_PASSWORD=ci-test-password \
+            --from-literal=GROQ_API_KEY=dummy-key-not-used \
+            -n civicpulse-prod \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Override TRIAGE_PROVIDER to simulated
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit add configmap civicpulse-config --behavior=merge --literal=TRIAGE_PROVIDER=simulated
+
+      - name: Deploy with kustomize
+        run: |
+          kubectl apply -k k8s/overlays/prod
+
+      - name: Wait for backend rollout
+        run: |
+          kubectl rollout status deployment/prod-backend -n civicpulse-prod --timeout=5m
+
+      - name: Wait for frontend rollout
+        run: |
+          kubectl rollout status deployment/prod-frontend -n civicpulse-prod --timeout=5m
+
+      - name: Wait for postgres StatefulSet
+        run: |
+          kubectl rollout status statefulset/prod-postgres -n civicpulse-prod --timeout=5m
+
+      - name: Show all pods
+        run: |
+          kubectl get pods -n civicpulse-prod
+
+      - name: Run smoke test
+        run: |
+          # Port-forward backend service
+          kubectl port-forward svc/prod-backend 8000:8000 -n civicpulse-prod &
+          PF_PID=$!
+          sleep 5
+
+          # Test health endpoint
+          echo "Testing /api/meta/health..."
+          health_response=$(curl -sf http://localhost:8000/api/meta/health || echo "FAILED")
+          echo "Health: $health_response"
+          
+          if ! echo "$health_response" | grep -q '"status":"healthy"'; then
+            echo "❌ Health check failed"
+            kill $PF_PID || true
+            exit 1
+          fi
+          echo "✅ Health check passed"
+
+          # Test ready endpoint
+          echo "Testing /api/meta/ready..."
+          ready_response=$(curl -sf http://localhost:8000/api/meta/ready || echo "FAILED")
+          echo "Ready: $ready_response"
+          
+          if ! echo "$ready_response" | grep -q '"status":"ready"'; then
+            echo "❌ Ready check failed"
+            kill $PF_PID || true
+            exit 1
+          fi
+          echo "✅ Ready check passed"
+
+          # Create a complaint
+          echo "Creating a complaint..."
+          complaint_response=$(curl -sf -X POST http://localhost:8000/api/complaints \
+            -H "Content-Type: application/json" \
+            -d '{"text":"Smoke test complaint from CD pipeline","location":"CI Cluster"}' || echo "FAILED")
+          echo "Complaint: $complaint_response"
+          
+          if ! echo "$complaint_response" | grep -q '"id"'; then
+            echo "❌ Complaint creation failed"
+            kill $PF_PID || true
+            exit 1
+          fi
+          echo "✅ Complaint creation passed"
+
+          kill $PF_PID || true
+
+      - name: Show HPA status
+        run: |
+          echo "=== HPA Status ==="
+          kubectl get hpa -n civicpulse-prod
+
+      - name: Show deployment details on failure
+        if: failure()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n civicpulse-prod
+          echo "=== Backend logs ==="
+          kubectl logs -n civicpulse-prod -l app=backend --tail=100 || true
+          echo "=== Frontend logs ==="
+          kubectl logs -n civicpulse-prod -l app=frontend --tail=100 || true
+          echo "=== Events ==="
+          kubectl get events -n civicpulse-prod --sort-by='.lastTimestamp'
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name civicpulse-test || true
