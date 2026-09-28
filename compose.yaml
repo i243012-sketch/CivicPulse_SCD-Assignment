@@ -19,6 +19,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
+      - backend-internal
       - civicpulse-network
 
   redis:
@@ -35,6 +36,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
+      - backend-internal
       - civicpulse-network
 
   backend:
@@ -72,6 +74,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
     networks:
+      - backend-internal
       - civicpulse-network
 
   frontend:
@@ -99,6 +102,9 @@ services:
 networks:
   civicpulse-network:
     driver: bridge
+  backend-internal:
+    driver: bridge
+    internal: true  # Database and Redis isolated from external access
 
 volumes:
   postgres_data:
