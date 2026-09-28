@@ -241,6 +241,19 @@ jobs:
                 imagePullSecrets:
                   - name: ghcr-pull-secret
                 initContainers:
+                  # Wait for database to be ready before running migrations
+                  - name: wait-for-db
+                    image: busybox:1.35
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        echo "Waiting for PostgreSQL to be ready..."
+                        until nc -z prod-postgres 5432; do
+                          echo "PostgreSQL not ready, waiting 2s..."
+                          sleep 2
+                        done
+                        echo "✅ PostgreSQL is ready!"
                   - name: run-migrations
                     resources:
                       requests:
@@ -336,6 +349,17 @@ jobs:
       - name: Deploy with kustomize
         run: |
           kubectl apply -k k8s/overlays/prod
+
+      - name: Wait for postgres StatefulSet to be ready
+        run: |
+          echo "Waiting for PostgreSQL StatefulSet..."
+          kubectl rollout status statefulset/prod-postgres -n civicpulse-prod --timeout=5m
+          
+          echo "Waiting for PostgreSQL pod to be ready..."
+          kubectl wait --for=condition=Ready pod -l app=postgres \
+            -n civicpulse-prod --timeout=300s
+          
+          echo "✅ PostgreSQL is ready"
 
       - name: Wait for backend rollout
         run: |
