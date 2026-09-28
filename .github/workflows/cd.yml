@@ -221,20 +221,15 @@ jobs:
             civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
           
           # Override replicas to 1 for CI
-          kustomize edit set replicas backend=1 frontend=1 redis=1 postgres=1
+          kustomize edit set replicas \
+            backend=1 frontend=1 redis=1 postgres=1
           
-          # Override TRIAGE_PROVIDER in the existing configMapGenerator
-          cat >> kustomization.yaml << 'EOF'
+          # Change the existing TRIAGE_PROVIDER value in configMapGenerator
+          # instead of appending a duplicate configMapGenerator section
+          sed -i 's/TRIAGE_PROVIDER=llm/TRIAGE_PROVIDER=simulated/' kustomization.yaml
           
-          configMapGenerator:
-          - name: civicpulse-config
-            behavior: merge
-            literals:
-            - TRIAGE_PROVIDER=simulated
-          EOF
-          
-          # Create patch file - must use original namespace from base (civicpulse not civicpulse-prod)
-          cat > ci-override-patch.yaml << 'EOF'
+          # Create separate patch files (one resource per file)
+          cat > backend-ci-patch.yaml <<'EOF'
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -244,26 +239,28 @@ jobs:
             template:
               spec:
                 imagePullSecrets:
-                - name: ghcr-pull-secret
+                  - name: ghcr-pull-secret
                 initContainers:
-                - name: run-migrations
-                  resources:
-                    requests:
-                      cpu: 100m
-                      memory: 256Mi
-                    limits:
-                      cpu: 500m
-                      memory: 512Mi
+                  - name: run-migrations
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 256Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
                 containers:
-                - name: backend
-                  resources:
-                    requests:
-                      cpu: 200m
-                      memory: 512Mi
-                    limits:
-                      cpu: 1000m
-                      memory: 1Gi
-          ---
+                  - name: backend
+                    resources:
+                      requests:
+                        cpu: 200m
+                        memory: 512Mi
+                      limits:
+                        cpu: 1000m
+                        memory: 1Gi
+          EOF
+          
+          cat > frontend-ci-patch.yaml <<'EOF'
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -273,8 +270,10 @@ jobs:
             template:
               spec:
                 imagePullSecrets:
-                - name: ghcr-pull-secret
-          ---
+                  - name: ghcr-pull-secret
+          EOF
+          
+          cat > postgres-ci-patch.yaml <<'EOF'
           apiVersion: apps/v1
           kind: StatefulSet
           metadata:
@@ -284,17 +283,20 @@ jobs:
             template:
               spec:
                 containers:
-                - name: postgres
-                  resources:
-                    requests:
-                      cpu: 200m
-                      memory: 512Mi
-                    limits:
-                      cpu: 1000m
-                      memory: 1Gi
+                  - name: postgres
+                    resources:
+                      requests:
+                        cpu: 200m
+                        memory: 512Mi
+                      limits:
+                        cpu: 1000m
+                        memory: 1Gi
           EOF
           
-          kustomize edit add patch --path ci-override-patch.yaml
+          # Add each patch separately
+          kustomize edit add patch --path backend-ci-patch.yaml
+          kustomize edit add patch --path frontend-ci-patch.yaml
+          kustomize edit add patch --path postgres-ci-patch.yaml
 
       - name: Verify rendered manifests
         run: |
