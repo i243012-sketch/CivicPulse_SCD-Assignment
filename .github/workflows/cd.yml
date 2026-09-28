@@ -356,9 +356,20 @@ jobs:
       - name: Run smoke test
         run: |
           # Port-forward backend service
+          echo "Starting port-forward to backend service..."
           kubectl port-forward svc/prod-backend 8000:8000 -n civicpulse-prod &
           PF_PID=$!
-          sleep 10
+          
+          # Wait longer for port-forward to be ready
+          echo "Waiting for port-forward to be ready..."
+          sleep 15
+          
+          # Verify port-forward is working
+          if ! ps -p $PF_PID > /dev/null; then
+            echo "❌ Port-forward process died"
+            exit 1
+          fi
+          echo "✅ Port-forward process running (PID: $PF_PID)"
 
           # Test health endpoint
           echo "Testing /api/meta/health..."
@@ -367,6 +378,8 @@ jobs:
           
           if ! echo "$health_response" | grep -q '"status":"healthy"'; then
             echo "❌ Health check failed"
+            echo "Checking backend logs..."
+            kubectl logs -n civicpulse-prod -l app=backend --tail=50 || true
             kill $PF_PID || true
             exit 1
           fi
@@ -379,23 +392,36 @@ jobs:
           
           if ! echo "$ready_response" | grep -q '"status":"ready"'; then
             echo "❌ Ready check failed"
+            echo "Checking backend logs..."
+            kubectl logs -n civicpulse-prod -l app=backend --tail=50 || true
             kill $PF_PID || true
             exit 1
           fi
           echo "✅ Ready check passed"
 
-          # Create a complaint
+          # Create a complaint (with retry)
           echo "Creating a complaint..."
-          complaint_response=$(curl -sf -X POST http://localhost:8000/api/complaints \
-            -H "Content-Type: application/json" \
-            -d '{"text":"Smoke test complaint from CD pipeline","location":"CI Cluster"}' || echo "FAILED")
-          echo "Complaint: $complaint_response"
-          
-          if ! echo "$complaint_response" | grep -q '"id"'; then
-            echo "❌ Complaint creation failed"
-            kill $PF_PID || true
-            exit 1
-          fi
+          for i in 1 2 3; do
+            complaint_response=$(curl -sf -X POST http://localhost:8000/api/complaints \
+              -H "Content-Type: application/json" \
+              -d '{"text":"Smoke test complaint from CD pipeline","location":"CI Cluster"}' 2>&1 || echo "FAILED")
+            
+            if echo "$complaint_response" | grep -q '"id"'; then
+              echo "✅ Complaint created: $complaint_response"
+              break
+            else
+              echo "Attempt $i failed: $complaint_response"
+              if [ $i -eq 3 ]; then
+                echo "❌ Complaint creation failed after 3 attempts"
+                echo "Checking backend logs..."
+                kubectl logs -n civicpulse-prod -l app=backend --tail=50 || true
+                kill $PF_PID || true
+                exit 1
+              fi
+              echo "Retrying in 5 seconds..."
+              sleep 5
+            fi
+          done
           echo "✅ Complaint creation passed"
 
           kill $PF_PID || true
