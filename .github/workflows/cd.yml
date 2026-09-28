@@ -220,23 +220,27 @@ jobs:
             civicpulse-backend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-backend:${{ github.sha }} \
             civicpulse-frontend=ghcr.io/${{ github.repository_owner }}/civicpulse_scd-assignment-frontend:${{ github.sha }}
           
-          # Create single comprehensive patch file for CI
+          # Override replicas to 1 for CI
+          kustomize edit set replicas backend=1 frontend=1 redis=1 postgres=1
+          
+          # Override TRIAGE_PROVIDER in the existing configMapGenerator
+          cat >> kustomization.yaml << 'EOF'
+          
+          configMapGenerator:
+          - name: civicpulse-config
+            behavior: merge
+            literals:
+            - TRIAGE_PROVIDER=simulated
+          EOF
+          
+          # Create patch file - must use original namespace from base (civicpulse not civicpulse-prod)
           cat > ci-override-patch.yaml << 'EOF'
-          # Override TRIAGE_PROVIDER to simulated
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: civicpulse-config
-          data:
-            TRIAGE_PROVIDER: simulated
-          ---
-          # Add imagePullSecret and reduce resources for backend
           apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: backend
+            namespace: civicpulse
           spec:
-            replicas: 1
             template:
               spec:
                 imagePullSecrets:
@@ -260,33 +264,23 @@ jobs:
                       cpu: 1000m
                       memory: 1Gi
           ---
-          # Add imagePullSecret to frontend and reduce replicas
           apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: frontend
+            namespace: civicpulse
           spec:
-            replicas: 1
             template:
               spec:
                 imagePullSecrets:
                 - name: ghcr-pull-secret
           ---
-          # Reduce redis replicas
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: redis
-          spec:
-            replicas: 1
-          ---
-          # Reduce postgres resources
           apiVersion: apps/v1
           kind: StatefulSet
           metadata:
             name: postgres
+            namespace: civicpulse
           spec:
-            replicas: 1
             template:
               spec:
                 containers:
@@ -300,7 +294,6 @@ jobs:
                       memory: 1Gi
           EOF
           
-          # Add the patch to kustomization
           kustomize edit add patch --path ci-override-patch.yaml
 
       - name: Verify rendered manifests
