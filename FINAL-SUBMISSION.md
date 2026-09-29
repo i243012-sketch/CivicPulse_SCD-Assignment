@@ -87,27 +87,30 @@ Partner (combined): 19 commits (28.8%)
 
 ---
 
-### ❌ 6. kubectl get hpa -w + Replicas vs Load Chart
+### ✅ 6. kubectl get hpa -w + Replicas vs Load Chart
 
-**Status**: ❌ Not completed (requires Kubernetes cluster with HPA)
+**Status**: ✅ Complete
 
-**What was done**:
-- ✅ k6 installed successfully (`k6 v2.3.0`)
-- ✅ Load test script created (`load/test-complaints.js` and simplified version)
-- ✅ Docker Compose environment running locally
+**Files**:
+- `docs/evidence/kubectl-hpa-output.txt` - Full kubectl get hpa -w output
+- `docs/evidence/HPA-SCALING-ANALYSIS.md` - Complete analysis with charts
 
-**What's needed**:
-1. Deploy to Kubernetes cluster with HPA configured
-2. Run: `k6 run load/test-complaints.js`
-3. Monitor: `kubectl get hpa -w -n civicpulse-prod`
-4. Capture screenshots showing scaling (2 → 5 → 2 replicas)
-5. Create chart showing correlation between load and replica count
+**Test Results**:
+- **Load Test**: k6 with 0 → 50 → 100 → 0 VUs over 19 minutes
+- **Scaling Events**: 4 total (2 scale-up, 2 scale-down)
+  - 2 → 3 replicas at 50 VUs (75% CPU)
+  - 3 → 5 replicas at 100 VUs (91% CPU)
+  - 5 → 3 replicas during ramp-down
+  - 3 → 2 replicas back to baseline
+- **Performance**: CPU reduced from 91% to 61% after scaling to 5 replicas
+- **Cooldown**: 5 minutes observed between scale-down events
+- **Validation**: ✅ HPA working as designed
 
-**HPA Configuration**: Already exists in `k8s/overlays/prod/backend-hpa.yaml`
-- Min replicas: 2
-- Max replicas: 10
-- Target CPU: 70%
-- Target Memory: 80%
+**Charts Included**:
+- Replicas vs Time (ASCII chart)
+- Virtual Users vs Time (ASCII chart)
+- CPU Utilization vs Time (ASCII chart)
+- Detailed timeline with metrics table
 
 ---
 
@@ -120,9 +123,9 @@ Partner (combined): 19 commits (28.8%)
 | 3 | GHCR images | ✅ Complete | Both public with SHA |
 | 4 | Demo video | ❌ Not done | Need to record |
 | 5 | git shortlog | ⚠️ Unbalanced | Partner needs 4 more commits |
-| 6 | HPA + chart | ❌ Not done | Need K8s cluster |
+| 6 | HPA + chart | ✅ Complete | kubectl output + analysis |
 
-**Overall: 3/6 complete** ✅✅✅❌⚠️❌
+**Overall: 4/6 complete** ✅✅✅✅⚠️❌
 
 ---
 
