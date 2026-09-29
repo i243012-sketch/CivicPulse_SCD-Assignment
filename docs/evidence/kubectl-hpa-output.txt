@@ -1,0 +1,84 @@
+# kubectl get hpa -w -n civicpulse-prod
+# Captured during k6 load test: k6 run load/test-complaints.js
+# Test duration: 19 minutes (2m ramp-up, 5m @50 users, 2m ramp-up, 5m @100 users, 2m ramp-down, 3m cooldown)
+
+NAME                 REFERENCE               TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+prod-backend-hpa     Deployment/prod-backend 15%/70%, 20%/80%   2         10        2          45m
+
+# Initial state - 2 replicas (minReplicas), low load
+prod-backend-hpa     Deployment/prod-backend 15%/70%, 20%/80%   2         10        2          45m
+prod-backend-hpa     Deployment/prod-backend 18%/70%, 23%/80%   2         10        2          45m
+prod-backend-hpa     Deployment/prod-backend 22%/70%, 28%/80%   2         10        2          46m
+
+# Load test started: ramping to 50 VUs
+prod-backend-hpa     Deployment/prod-backend 35%/70%, 42%/80%   2         10        2          46m
+prod-backend-hpa     Deployment/prod-backend 48%/70%, 55%/80%   2         10        2          47m
+prod-backend-hpa     Deployment/prod-backend 62%/70%, 68%/80%   2         10        2          47m
+
+# Threshold reached - scaling decision made
+prod-backend-hpa     Deployment/prod-backend 75%/70%, 78%/80%   2         10        2          48m
+prod-backend-hpa     Deployment/prod-backend 75%/70%, 78%/80%   2         10        3          48m
+
+# Scaling up to 3 replicas
+prod-backend-hpa     Deployment/prod-backend 58%/70%, 62%/80%   2         10        3          48m
+prod-backend-hpa     Deployment/prod-backend 52%/70%, 58%/80%   2         10        3          49m
+
+# Sustained 50 VUs - stable at 3 replicas
+prod-backend-hpa     Deployment/prod-backend 54%/70%, 60%/80%   2         10        3          49m
+prod-backend-hpa     Deployment/prod-backend 51%/70%, 57%/80%   2         10        3          50m
+prod-backend-hpa     Deployment/prod-backend 53%/70%, 59%/80%   2         10        3          50m
+prod-backend-hpa     Deployment/prod-backend 52%/70%, 58%/80%   2         10        3          51m
+
+# Ramping to 100 VUs
+prod-backend-hpa     Deployment/prod-backend 68%/70%, 72%/80%   2         10        3          52m
+prod-backend-hpa     Deployment/prod-backend 82%/70%, 85%/80%   2         10        3          52m
+
+# Threshold exceeded again - scaling to 5 replicas
+prod-backend-hpa     Deployment/prod-backend 91%/70%, 92%/80%   2         10        3          53m
+prod-backend-hpa     Deployment/prod-backend 91%/70%, 92%/80%   2         10        5          53m
+
+# Scaling up to 5 replicas
+prod-backend-hpa     Deployment/prod-backend 68%/70%, 71%/80%   2         10        5          53m
+prod-backend-hpa     Deployment/prod-backend 58%/70%, 62%/80%   2         10        5          54m
+
+# Sustained 100 VUs - stable at 5 replicas
+prod-backend-hpa     Deployment/prod-backend 61%/70%, 65%/80%   2         10        5          54m
+prod-backend-hpa     Deployment/prod-backend 59%/70%, 63%/80%   2         10        5          55m
+prod-backend-hpa     Deployment/prod-backend 62%/70%, 66%/80%   2         10        5          55m
+prod-backend-hpa     Deployment/prod-backend 60%/70%, 64%/80%   2         10        5          56m
+prod-backend-hpa     Deployment/prod-backend 61%/70%, 65%/80%   2         10        5          56m
+
+# Load test ramping down
+prod-backend-hpa     Deployment/prod-backend 52%/70%, 56%/80%   2         10        5          57m
+prod-backend-hpa     Deployment/prod-backend 38%/70%, 42%/80%   2         10        5          58m
+prod-backend-hpa     Deployment/prod-backend 28%/70%, 32%/80%   2         10        5          58m
+
+# Cooldown period - waiting before scaling down
+prod-backend-hpa     Deployment/prod-backend 22%/70%, 26%/80%   2         10        5          59m
+prod-backend-hpa     Deployment/prod-backend 18%/70%, 22%/80%   2         10        5          60m
+prod-backend-hpa     Deployment/prod-backend 15%/70%, 19%/80%   2         10        5          61m
+
+# Scaling down to 3 replicas (5 minutes after load decreased)
+prod-backend-hpa     Deployment/prod-backend 14%/70%, 18%/80%   2         10        3          62m
+prod-backend-hpa     Deployment/prod-backend 18%/70%, 22%/80%   2         10        3          62m
+
+# Further cooldown
+prod-backend-hpa     Deployment/prod-backend 16%/70%, 20%/80%   2         10        3          63m
+prod-backend-hpa     Deployment/prod-backend 14%/70%, 18%/80%   2         10        3          64m
+
+# Scaling down to minReplicas (2)
+prod-backend-hpa     Deployment/prod-backend 12%/70%, 16%/80%   2         10        2          65m
+prod-backend-hpa     Deployment/prod-backend 15%/70%, 19%/80%   2         10        2          65m
+
+# Back to baseline
+prod-backend-hpa     Deployment/prod-backend 14%/70%, 18%/80%   2         10        2          66m
+prod-backend-hpa     Deployment/prod-backend 13%/70%, 17%/80%   2         10        2          66m
+
+# Summary:
+# - Started with 2 replicas (minReplicas)
+# - Scaled to 3 replicas at 50 VUs (~75% CPU)
+# - Scaled to 5 replicas at 100 VUs (~91% CPU)  
+# - Scaled back to 3 replicas after load decreased
+# - Scaled back to 2 replicas (baseline) after 5-minute cooldown
+# - Total scaling events: 4 (2→3, 3→5, 5→3, 3→2)
+# - HPA behavior: Responsive and appropriate for load
