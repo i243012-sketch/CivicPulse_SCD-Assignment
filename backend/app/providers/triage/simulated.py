@@ -13,14 +13,14 @@ class SimulatedTriage:
     def triage(self, text: str, location: str) -> TriageResult:
         """
         Generate deterministic triage results based on input hash.
-        
+
         This ensures tests are never flaky due to network issues or
         non-deterministic AI responses.
-        
+
         Args:
             text: Complaint text
             location: Complaint location
-            
+
         Returns:
             TriageResult with deterministic classification based on hash
         """
@@ -29,12 +29,12 @@ class SimulatedTriage:
         hash_value = int(hashlib.sha256(combined.encode()).hexdigest(), 16)
 
         # Deterministically select category
-        categories = list(Category)
-        category = categories[hash_value % len(categories)]
+        categories: list[Category] = list(Category)
+        category: Category = categories[hash_value % len(categories)]
 
         # Deterministically select priority
-        priorities = list(Priority)
-        priority = priorities[(hash_value // len(categories)) % len(priorities)]
+        priorities: list[Priority] = list(Priority)
+        priority: Priority = priorities[(hash_value // len(categories)) % len(priorities)]
 
         # Generate deterministic summary
         summary = self._generate_summary(text, hash_value)
@@ -53,10 +53,10 @@ class SimulatedTriage:
         """Generate a deterministic summary."""
         # Clean and truncate
         cleaned = " ".join(text.split())
-        
+
         # Use hash to determine summary length variation (100-140 chars)
         max_len = 100 + (hash_value % 41)
-        
+
         if len(cleaned) <= max_len:
             return cleaned
         return cleaned[:max_len - 3] + "..."

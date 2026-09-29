@@ -19,6 +19,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
+      - backend-internal
       - civicpulse-network
 
   redis:
@@ -35,6 +36,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
+      - backend-internal
       - civicpulse-network
 
   backend:
@@ -43,7 +45,7 @@ services:
       dockerfile: ./backend/Dockerfile
     container_name: civicpulse-backend-dev
     environment:
-      - DATABASE_URL=postgresql://civicpulse:${POSTGRES_PASSWORD:-dev_password_change_in_prod}@postgres:5432/civicpulse
+      - DATABASE_URL=postgresql+psycopg2://civicpulse:${POSTGRES_PASSWORD:-dev_password_change_in_prod}@postgres:5432/civicpulse
       - REDIS_URL=redis://redis:6379/0
       - TRIAGE_PROVIDER=${TRIAGE_PROVIDER}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
@@ -72,6 +74,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
     networks:
+      - backend-internal
       - civicpulse-network
 
   frontend:
@@ -79,13 +82,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: civicpulse-frontend-dev
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=8000
     ports:
-      - "8080:80"
+      - "8080:8080"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/nginx-health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/nginx-health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -96,6 +102,9 @@ services:
 networks:
   civicpulse-network:
     driver: bridge
+  backend-internal:
+    driver: bridge
+    internal: true  # Database and Redis isolated from external access
 
 volumes:
   postgres_data:

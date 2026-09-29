@@ -15,7 +15,6 @@ from app.schemas.complaint import (
     ComplaintResponse,
     ComplaintStatusUpdate,
 )
-from app.schemas.errors import StateTransitionError
 from app.services.complaint_service import ComplaintService
 from app.services.redis_service import RedisService
 
@@ -48,10 +47,10 @@ def create_complaint(
 ) -> ComplaintResponse:
     """
     Create a new complaint.
-    
+
     Validates input, performs triage (with caching and fallback),
     persists complaint, and returns 201.
-    
+
     Rate limited per client IP.
     """
     # Rate limiting
@@ -60,13 +59,13 @@ def create_complaint(
     if settings.RATE_LIMIT_ENABLED:
         client_ip = request.client.host if request.client else "unknown"
         redis_service = RedisService()
-        
+
         allowed, retry_after = redis_service.check_rate_limit(
             client_ip,
             limit=settings.RATE_LIMIT_PER_MINUTE,
             window=60,
         )
-        
+
         if not allowed:
             rate_limit_exceeded.labels(client_ip=client_ip).inc()
             raise HTTPException(
@@ -114,7 +113,7 @@ def list_complaints(
 ) -> ComplaintListResponse:
     """
     List complaints with optional filtering and pagination.
-    
+
     Query parameters:
     - category: Filter by category
     - priority: Filter by priority
@@ -146,30 +145,30 @@ def update_complaint_status(
 ) -> ComplaintResponse:
     """
     Update complaint status.
-    
+
     Enforces state machine transitions:
     - open -> in_progress, rejected
     - in_progress -> resolved, rejected
     - resolved -> (terminal, no transitions)
     - rejected -> (terminal, no transitions)
-    
+
     Returns 409 with transition error message if invalid.
     """
     result, error = service.update_complaint_status(
         complaint_id,
         status_update.status,
     )
-    
+
     if result is None and error is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Complaint {complaint_id} not found",
         )
-    
+
     if error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=error,
         )
-    
+
     return result  # type: ignore[return-value]

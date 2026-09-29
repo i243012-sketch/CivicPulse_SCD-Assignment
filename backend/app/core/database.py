@@ -29,7 +29,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db() -> Generator[Session, None, None]:
     """
     Dependency that provides a database session.
-    
+
     Yields a session and ensures it's closed after use.
     """
     db = SessionLocal()

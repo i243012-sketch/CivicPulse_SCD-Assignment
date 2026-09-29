@@ -1,5 +1,5 @@
 """Repository for complaint database operations - ALL SQL lives here."""
-from typing import Sequence
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -18,10 +18,10 @@ class ComplaintRepository:
     def create(self, complaint: Complaint) -> Complaint:
         """
         Create a new complaint in the database.
-        
+
         Args:
             complaint: Complaint model instance to persist
-            
+
         Returns:
             The persisted complaint with database-generated fields
         """
@@ -33,10 +33,10 @@ class ComplaintRepository:
     def get_by_id(self, complaint_id: UUID) -> Complaint | None:
         """
         Get a complaint by ID.
-        
+
         Args:
             complaint_id: UUID of the complaint
-            
+
         Returns:
             Complaint if found, None otherwise
         """
@@ -53,14 +53,14 @@ class ComplaintRepository:
     ) -> tuple[Sequence[Complaint], int]:
         """
         Get all complaints with optional filtering and pagination.
-        
+
         Args:
             category: Filter by category (optional)
             priority: Filter by priority (optional)
             status: Filter by status (optional)
             page: Page number (1-indexed)
             page_size: Number of items per page (max 100)
-            
+
         Returns:
             Tuple of (list of complaints, total count)
         """
@@ -93,11 +93,11 @@ class ComplaintRepository:
     def update_status(self, complaint: Complaint, new_status: Status) -> Complaint:
         """
         Update complaint status.
-        
+
         Args:
             complaint: Complaint to update
             new_status: New status value
-            
+
         Returns:
             Updated complaint
         """
@@ -109,7 +109,7 @@ class ComplaintRepository:
     def get_stats_by_category(self) -> list[tuple[Category, int]]:
         """
         Get complaint counts grouped by category.
-        
+
         Returns:
             List of (category, count) tuples
         """
@@ -124,7 +124,7 @@ class ComplaintRepository:
     def get_stats_by_priority(self) -> list[tuple[Priority, int]]:
         """
         Get complaint counts grouped by priority.
-        
+
         Returns:
             List of (priority, count) tuples
         """
@@ -139,7 +139,7 @@ class ComplaintRepository:
     def get_total_count(self) -> int:
         """
         Get total count of all complaints.
-        
+
         Returns:
             Total number of complaints
         """

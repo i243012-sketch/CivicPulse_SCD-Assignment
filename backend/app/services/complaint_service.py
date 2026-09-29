@@ -2,8 +2,7 @@
 import json
 import time
 from collections import deque
-from datetime import datetime, timezone
-from typing import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -11,12 +10,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.metrics import (
+    stats_cache_hit,
+    stats_cache_miss,
     triage_cache_hit,
     triage_cache_miss,
     triage_fallback_count,
     triage_latency,
-    stats_cache_hit,
-    stats_cache_miss,
 )
 from app.models.complaint import Category, Complaint, Priority, Status, is_valid_transition
 from app.providers.triage import TriageProvider
@@ -49,7 +48,7 @@ class ComplaintService:
     ) -> None:
         """
         Initialize complaint service.
-        
+
         Args:
             db: Database session
             triage_provider: Triage provider instance
@@ -62,16 +61,16 @@ class ComplaintService:
     def create_complaint(self, complaint_data: ComplaintCreate) -> ComplaintResponse:
         """
         Create a new complaint with triage.
-        
+
         Business logic:
         1. Check cache for triage result (by content hash)
         2. If miss, call triage provider and cache result
         3. Create complaint with triage results
         4. Invalidate stats cache
-        
+
         Args:
             complaint_data: Validated complaint creation data
-            
+
         Returns:
             Created complaint response
         """
@@ -102,13 +101,13 @@ class ComplaintService:
         else:
             # Cache miss - call provider
             triage_cache_miss.inc()
-            
+
             try:
                 triage_result = self.triage_provider.triage(
                     complaint_data.text,
                     complaint_data.location,
                 )
-                
+
                 # Check if fallback occurred (provider name changed)
                 if self.triage_provider.name == "llm:groq" and "rules" in triaged_by:
                     fallback = True
@@ -117,7 +116,7 @@ class ComplaintService:
                         provider=self.triage_provider.name,
                         reason="llm_failure",
                     ).inc()
-                    
+
             except Exception as e:
                 # Fallback on any exception
                 logger.warning(
@@ -130,7 +129,7 @@ class ComplaintService:
                     provider=self.triage_provider.name,
                     reason="exception",
                 ).inc()
-                
+
                 # Use rules as fallback
                 from app.providers.triage.rules import RuleBasedTriage
                 fallback_provider = RuleBasedTriage()
@@ -138,9 +137,9 @@ class ComplaintService:
                     complaint_data.text,
                     complaint_data.location,
                 )
-            
+
             latency_ms = int((time.time() - start_time) * 1000)
-            
+
             # Cache the result WITH the provider name
             cache_data = {
                 "result": json.loads(triage_result.model_dump_json()),
@@ -160,7 +159,7 @@ class ComplaintService:
             provider=triaged_by,
             latency_ms=latency_ms,
             fallback=fallback,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
         self._recent_outcomes.append(outcome)
 
@@ -188,10 +187,10 @@ class ComplaintService:
     def get_complaint(self, complaint_id: UUID) -> ComplaintResponse | None:
         """
         Get a complaint by ID.
-        
+
         Args:
             complaint_id: UUID of complaint
-            
+
         Returns:
             Complaint response if found, None otherwise
         """
@@ -210,14 +209,14 @@ class ComplaintService:
     ) -> ComplaintListResponse:
         """
         List complaints with filtering and pagination.
-        
+
         Args:
             category: Optional category filter
             priority: Optional priority filter
             status: Optional status filter
             page: Page number (1-indexed)
             page_size: Items per page
-            
+
         Returns:
             Paginated list of complaints
         """
@@ -246,11 +245,11 @@ class ComplaintService:
     ) -> tuple[ComplaintResponse | None, str | None]:
         """
         Update complaint status with state machine validation.
-        
+
         Args:
             complaint_id: UUID of complaint
             new_status: New status to transition to
-            
+
         Returns:
             Tuple of (updated complaint or None, error message or None)
         """
@@ -277,12 +276,12 @@ class ComplaintService:
     def get_stats(self) -> tuple[StatsResponse, bool]:
         """
         Get aggregated statistics with Redis caching.
-        
+
         Returns:
             Tuple of (stats response, cache_hit boolean)
         """
         cache_key = "stats:aggregated"
-        
+
         # Try cache first
         cached = self.redis.get(cache_key)
         if cached:
@@ -322,7 +321,7 @@ class ComplaintService:
     def get_recent_triage_outcomes(cls) -> list[TriageOutcome]:
         """
         Get recent triage outcomes for metadata endpoint.
-        
+
         Returns:
             List of up to 20 most recent triage outcomes
         """

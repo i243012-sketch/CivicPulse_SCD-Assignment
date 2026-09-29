@@ -20,8 +20,9 @@ describe('Dashboard', () => {
     render(<Dashboard />);
     
     await waitFor(() => {
-      expect(screen.getByText('5')).toBeInTheDocument(); // total complaints
+      expect(screen.getByText('Total Complaints')).toBeInTheDocument();
       expect(screen.getByText('roads')).toBeInTheDocument();
+      expect(screen.getAllByText('5')).toHaveLength(3); // total + category + priority
     });
   });
 });

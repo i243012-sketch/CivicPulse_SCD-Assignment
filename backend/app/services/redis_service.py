@@ -1,7 +1,6 @@
 """Redis service for caching and rate limiting."""
 import hashlib
-import json
-from typing import Any
+from typing import cast
 
 import redis
 
@@ -16,20 +15,24 @@ class RedisService:
 
     def __init__(self) -> None:
         """Initialize Redis connection."""
-        self.client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        self.client: redis.Redis = redis.from_url(  # type: ignore[no-untyped-call]
+            settings.REDIS_URL,
+            decode_responses=True,
+        )
 
     def get(self, key: str) -> str | None:
         """
         Get value from Redis.
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             Value if exists, None otherwise
         """
         try:
-            return self.client.get(key)
+            value = self.client.get(key)
+            return cast(str | None, value)
         except redis.RedisError as e:
             logger.error(f"Redis GET error: {e}")
             return None
@@ -37,12 +40,12 @@ class RedisService:
     def set(self, key: str, value: str, ttl: int) -> bool:
         """
         Set value in Redis with TTL.
-        
+
         Args:
             key: Cache key
             value: Value to store
             ttl: Time to live in seconds
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -56,10 +59,10 @@ class RedisService:
     def delete(self, key: str) -> bool:
         """
         Delete key from Redis.
-        
+
         Args:
             key: Cache key to delete
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -73,16 +76,16 @@ class RedisService:
     def increment(self, key: str, ttl: int | None = None) -> int | None:
         """
         Increment counter in Redis.
-        
+
         Args:
             key: Counter key
             ttl: Optional TTL for the key (only set on first increment)
-            
+
         Returns:
             New counter value, or None on error
         """
         try:
-            value = self.client.incr(key)
+            value = cast(int, self.client.incr(key))
             if ttl and value == 1:  # First increment, set TTL
                 self.client.expire(key, ttl)
             return value
@@ -93,12 +96,12 @@ class RedisService:
     def check_rate_limit(self, client_ip: str, limit: int, window: int) -> tuple[bool, int]:
         """
         Check if client has exceeded rate limit.
-        
+
         Args:
             client_ip: Client IP address
             limit: Maximum requests allowed
             window: Time window in seconds
-            
+
         Returns:
             Tuple of (is_allowed, retry_after_seconds)
         """
@@ -112,7 +115,7 @@ class RedisService:
 
         if count > limit:
             # Calculate retry after from TTL
-            retry_after = self.client.ttl(key)
+            retry_after = cast(int, self.client.ttl(key))
             return False, retry_after if retry_after > 0 else window
 
         return True, 0
@@ -120,12 +123,12 @@ class RedisService:
     def is_healthy(self) -> bool:
         """
         Check if Redis is reachable.
-        
+
         Returns:
             True if Redis responds to PING, False otherwise
         """
         try:
-            return self.client.ping()
+            return bool(self.client.ping())
         except redis.RedisError:
             return False
 
@@ -133,11 +136,11 @@ class RedisService:
     def compute_content_hash(text: str, location: str) -> str:
         """
         Compute deterministic hash of complaint content.
-        
+
         Args:
             text: Complaint text
             location: Complaint location
-            
+
         Returns:
             SHA256 hash as hex string
         """
